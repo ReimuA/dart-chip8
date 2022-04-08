@@ -88,15 +88,15 @@ class Chip8 {
     registers.v[idx] &= 0xFFFF;
   }
 
-  void mov(int opcode) => registers.v[_rxIndex(opcode)] = registers.v[(opcode & 0x0F0) >> 4];
+  void mov(int opcode) => registers.v[_rxIndex(opcode)] = registers.v[_ryIndex(opcode)];
   void movConst(int opcode) => registers.v[_rxIndex(opcode)] = (opcode & 0x00FF);
 
-  void or(int opcode) => registers.v[_rxIndex(opcode)] |= registers.v[(opcode & 0x0F0) >> 4];
-  void and(int opcode) => registers.v[_rxIndex(opcode)] &= registers.v[(opcode & 0x0F0) >> 4];
-  void xor(int opcode) => registers.v[_rxIndex(opcode)] ^= registers.v[(opcode & 0x0F0) >> 4];
+  void or(int opcode) => registers.v[_rxIndex(opcode)] |= registers.v[_ryIndex(opcode)];
+  void and(int opcode) => registers.v[_rxIndex(opcode)] &= registers.v[_ryIndex(opcode)];
+  void xor(int opcode) => registers.v[_rxIndex(opcode)] ^= registers.v[_ryIndex(opcode)];
 
   void add(int opcode) {
-    registers.v[_rxIndex(opcode)] += registers.v[(opcode & 0x0F0) >> 4];
+    registers.v[_rxIndex(opcode)] += registers.v[_ryIndex(opcode)];
     registers.v[0xF] = (registers.v[_rxIndex(opcode)] & 0xFF) != 0 ? 1 : 0;
     registers.v[_rxIndex(opcode)] &= 0xFF;
   }
@@ -138,9 +138,9 @@ class Chip8 {
 
   void gdelay(int _) {}
   void key(int _) {}
-  void sdelay(int opcode) => delayTimer = registers.v[opcode & 0x0F00 >> 8];
-  void ssound(int opcode) => soundTimer = registers.v[opcode & 0x0F00 >> 8];
-  void adi(int opcode) => registers.index += registers.v[opcode & 0x0F00 >> 8];
+  void sdelay(int opcode) => delayTimer = registers.v[_rxIndex(opcode)];
+  void ssound(int opcode) => soundTimer = registers.v[_rxIndex(opcode)];
+  void adi(int opcode) => registers.index += registers.v[_rxIndex(opcode)];
   void font(int _) {}
   void xfont(int _) {}
 
