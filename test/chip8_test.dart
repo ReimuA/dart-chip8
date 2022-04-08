@@ -98,4 +98,34 @@ void main() {
       expect(chip.registers.pc, 0x200);
     });
   });
+
+  group('Operation with memory', () {
+    test('bcd', () {
+      var chip = Chip8(index: 0x00FF, v0: 0xFF)..bcd(0x0000);
+
+      expect(chip.memory[chip.registers.index], 2);
+      expect(chip.memory[chip.registers.index + 1], 5);
+      expect(chip.memory[chip.registers.index + 2], 5);
+    });
+
+    test('str', () {
+      var chip = Chip8(index: 0x00FF, v0: 0xFF, v1: 0xAA, v2: 0x12)..str(0x0200);
+
+      expect(chip.memory[chip.registers.index - 1], 0x12);
+      expect(chip.memory[chip.registers.index - 2], 0xAA);
+      expect(chip.memory[chip.registers.index - 3], 0xFF);
+    });
+
+    test('ldr', () {
+      var chip = Chip8(index: 0x00FF);
+      var buffer = [0xFF, 0xAA, 0x12];
+
+      chip.memory.setRange(0x00FF, 0x00FF + buffer.length, buffer);
+      chip.ldr(0x0200);
+
+      expect(chip.memory[chip.registers.index - 1], 0x12);
+      expect(chip.memory[chip.registers.index - 2], 0xAA);
+      expect(chip.memory[chip.registers.index - 3], 0xFF);
+    });
+  });
 }

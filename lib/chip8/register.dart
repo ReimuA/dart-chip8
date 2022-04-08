@@ -1,10 +1,11 @@
 class Chip8Registers {
   int pc = 0x200;
-  int ri = 0;
+  int index;
   List<int> v;
   List<int> stack = [];
 
   Chip8Registers({
+    this.index = 0,
     int v0 = 0,
     int v1 = 0,
     int v2 = 0,
