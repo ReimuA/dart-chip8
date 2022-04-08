@@ -88,5 +88,14 @@ void main() {
                 .registers
                 .v[2],
             0xB3));
+
+    test('jsr / rts', () {
+      var chip = Chip8()..jsr(0x888);
+      expect(chip.registers.pc, 0x888);
+      expect(chip.registers.stack.last, 0x200);
+      chip.rts();
+      expect(chip.registers.stack.isEmpty, true);
+      expect(chip.registers.pc, 0x200);
+    });
   });
 }

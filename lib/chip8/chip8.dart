@@ -50,7 +50,7 @@ class Chip8 {
   void high(int _) => throw UnimplementedError();
   void jmp(int opcode) => registers.pc = opcode & 0x0FFF;
 
-  void rts(int _) => registers.pc = registers.stack.removeLast();
+  void rts() => registers.pc = registers.stack.removeLast();
 
   void jsr(int opcode) {
     registers.stack.add((registers.pc));
