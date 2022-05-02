@@ -7,6 +7,5 @@ build/
 
 # custom
 coverage/
-rom/
 .DS_STORE
 *.lcov
