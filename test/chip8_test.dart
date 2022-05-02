@@ -1,5 +1,8 @@
 import 'package:monke8/chip8/chip8.dart';
+import 'package:monke8/chip8/font.dart';
 import 'package:test/test.dart';
+
+import 'inputtest.dart';
 
 void main() {
   group('single assembly operation', () {
@@ -28,27 +31,39 @@ void main() {
         expect(chip.registers.stack.last, 0x200);
       });
 
-      test('sub - carry generated', () {
+      test('sub - no borrow', () {
         var chip = Chip8(v1: 0x12, v2: 0x19)..sub(0x0120);
-        expect(chip.registers.v[0x0F], 0x001);
+        expect(chip.registers.v[0x0F], 0x0);
         expect(chip.registers.v[0x01], 0xF9);
       });
 
-      test('sub - no carry generated', () {
+      test('add - carry generated', () {
+        var chip = Chip8(v1: 0xFF, v2: 0x10)..add(0x0120);
+        expect(chip.registers.v[0x0F], 0x01);
+        expect(chip.registers.v[0x01], 0x0F);
+      });
+
+      test('add - no carry generated', () {
+        var chip = Chip8(v1: 0x12, v2: 0x19)..add(0x0120);
+        expect(chip.registers.v[0x0F], 0x00);
+        expect(chip.registers.v[0x01], 0x2B);
+      });
+
+      test('sub - borrow generated', () {
         var chip = Chip8(v1: 0x19, v2: 0x12)..sub(0x0120);
-        expect(chip.registers.v[0x0F], 0x0);
+        expect(chip.registers.v[0x0F], 0x01);
         expect(chip.registers.v[0x01], 0x07);
       });
 
-      test('rsub - carry generated', () {
+      test('rsub - no borrow generated', () {
         var chip = Chip8(v1: 0x19, v2: 0x12)..rsub(0x0120);
-        expect(chip.registers.v[0x0F], 0x001);
+        expect(chip.registers.v[0x0F], 0x00);
         expect(chip.registers.v[0x01], 0xF9);
       });
 
-      test('rsub - no carry generated', () {
+      test('rsub - borrow generated', () {
         var chip = Chip8(v1: 0x12, v2: 0x19)..rsub(0x0120);
-        expect(chip.registers.v[0x0F], 0x0);
+        expect(chip.registers.v[0x0F], 0x01);
         expect(chip.registers.v[0x01], 0x07);
       });
 
@@ -75,6 +90,50 @@ void main() {
         expect(chip.registers.v[0x0F], 0x0);
         expect(chip.registers.v[0x01], 0x10);
       });
+
+      test('sdelay', () => expect((Chip8(v4: 0x12)..sdelay(0x0400)).delayTimer, 0x12));
+      test('ssound', () => expect((Chip8(v4: 0x12)..ssound(0x0400)).soundTimer, 0x12));
+
+      test('jmi', () => expect((Chip8(v0: 0x123)..jmi(0x0223)).registers.pc, 0x0346));
+      test('mvi', () => expect((Chip8()..mvi(0x0F23)).registers.index, 0x0F23));
+      test('addi', () => expect((Chip8(index: 0x123, v3: 0x123)..adi(0x0300)).registers.index, 0x0246));
+
+      test('cls', () {
+        var chip = Chip8();
+        chip.display[1][0x12] = 0xFF;
+        chip.cls();
+        expect(chip.display[1][0x12], 0x00);
+      });
+
+      test('font', () {
+        var chip = Chip8(v3: 0xA)..font(0x0300);
+        expect(chip.memory[chip.registers.index + 0], fonts[0xA][0]);
+        expect(chip.memory[chip.registers.index + 1], fonts[0xA][1]);
+        expect(chip.memory[chip.registers.index + 2], fonts[0xA][2]);
+        expect(chip.memory[chip.registers.index + 3], fonts[0xA][3]);
+      });
+    });
+  });
+
+  group('Key operation', () {
+    test('skpr - skip', () {
+      var chip = Chip8(input: Chip8InputTest(0x2))..skpr(0x2222);
+      expect(chip.registers.pc, 0x0202);
+    });
+
+    test('skpr - no skip', () {
+      var chip = Chip8(input: Chip8InputTest(0x0))..skpr(0x2222);
+      expect(chip.registers.pc, 0x0200);
+    });
+
+    test('skup - skip', () {
+      var chip = Chip8(input: Chip8InputTest(0x0))..skup(0x2222);
+      expect(chip.registers.pc, 0x0202);
+    });
+
+    test('skup - no skip', () {
+      var chip = Chip8(input: Chip8InputTest(0x2))..skup(0x2222);
+      expect(chip.registers.pc, 0x0200);
     });
   });
 

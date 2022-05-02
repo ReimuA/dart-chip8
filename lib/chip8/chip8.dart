@@ -1,16 +1,25 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:monke8/chip8/input.dart';
 import 'package:monke8/chip8/register.dart';
+
+import 'cli_input.dart';
+import 'font.dart';
 
 class Chip8 {
   Uint8List memory;
-  Chip8Registers registers;
+  IChip8Input? input;
   int soundTimer = 0;
   int delayTimer = 0;
+  Chip8Registers registers;
+  List<bool> keysPressedStatus = List.filled(16, false);
+  List<List<int>> display = List.generate(32, (_) => List.filled(64, 0));
 
   Chip8({
+    this.input,
     int index = 0,
     Uint8List? rom,
     int v0 = 0,
@@ -29,7 +38,7 @@ class Chip8 {
     int vD = 0,
     int vE = 0,
     int vF = 0,
-  })  : memory = Uint8List(0xFFFF),
+  })  : memory = Uint8List(4096),
         registers = Chip8Registers(
           index: index,
           v0: v0,
@@ -52,17 +61,15 @@ class Chip8 {
     if (rom != null) {
       memory.setRange(0x200, 0x200 + rom.length, rom);
     }
+
+    memory.setRange(0x00, 16 * 5, fonts.fold<List<int>>([], (previous, e) => previous..addAll(e)));
   }
 
   int _rxIndex(int opcode) => (opcode & 0x0F00) >> 8;
   int _ryIndex(int opcode) => (opcode & 0x00F0) >> 4;
 
-  void scdown(int _) => throw UnimplementedError();
-  void cls(int _) {}
-  void scright(int _) => throw UnimplementedError();
-  void scleft(int _) => throw UnimplementedError();
-  void low(int _) => throw UnimplementedError();
-  void high(int _) => throw UnimplementedError();
+  void cls() => display = List.generate(32, (_) => List.filled(64, 0));
+
   void jmp(int opcode) => registers.pc = opcode & 0x0FFF;
 
   void rts() => registers.pc = registers.stack.removeLast();
@@ -79,8 +86,23 @@ class Chip8 {
   void skeq(int opcode) => _skip(registers.v[_rxIndex(opcode)] == registers.v[_ryIndex(opcode)]);
   void skne(int opcode) => _skip(registers.v[_rxIndex(opcode)] != registers.v[_ryIndex(opcode)]);
 
-  void skpr(int _) {}
-  void skup(int _) {}
+  void skpr(int opcode) {
+    var index = registers.v[_rxIndex(opcode)];
+    var shouldSkip = input?.keysPressedStatus[index] ?? false;
+    if (shouldSkip) input?.resetInput();
+    _skip(shouldSkip);
+  }
+
+  void skup(int opcode) {
+    var index = registers.v[_rxIndex(opcode)];
+
+    var shouldSkip = !(input?.keysPressedStatus[index] ?? true);
+    if (!shouldSkip) input?.resetInput();
+    _skip(shouldSkip);
+  }
+
+  void key(int opcode) async =>
+      registers.v[_rxIndex(opcode)] = await input?.getNextKeyPressed() ?? registers.v[_rxIndex(opcode)];
 
   void addConst(int opcode) {
     var idx = (opcode & 0x0F00) >> 8;
@@ -96,16 +118,17 @@ class Chip8 {
   void xor(int opcode) => registers.v[_rxIndex(opcode)] ^= registers.v[_ryIndex(opcode)];
 
   void add(int opcode) {
-    registers.v[_rxIndex(opcode)] += registers.v[_ryIndex(opcode)];
-    registers.v[0xF] = (registers.v[_rxIndex(opcode)] & 0xFF) != 0 ? 1 : 0;
-    registers.v[_rxIndex(opcode)] &= 0xFF;
+    var rx = _rxIndex(opcode);
+    registers.v[rx] += registers.v[_ryIndex(opcode)];
+    registers.v[0xF] = registers.v[rx] > 0xFF ? 1 : 0;
+    registers.v[rx] &= 0xFF;
   }
 
   void rsub(int opcode) {
     var rxIdx = (opcode & 0x0F00) >> 8;
     var ryIdx = (opcode & 0x0F0) >> 4;
 
-    registers.v[0xF] = registers.v[rxIdx] < registers.v[ryIdx] ? 0 : 1;
+    registers.v[0xF] = registers.v[rxIdx] < registers.v[ryIdx] ? 1 : 0;
     registers.v[rxIdx] = registers.v[ryIdx] - registers.v[rxIdx];
     registers.v[rxIdx] &= 0xFF;
   }
@@ -114,7 +137,7 @@ class Chip8 {
     var rxIdx = (opcode & 0x0F00) >> 8;
     var ryIdx = (opcode & 0x0F0) >> 4;
 
-    registers.v[0xF] = registers.v[rxIdx] > registers.v[ryIdx] ? 0 : 1;
+    registers.v[0xF] = registers.v[rxIdx] > registers.v[ryIdx] ? 1 : 0;
     registers.v[rxIdx] -= registers.v[ryIdx];
     registers.v[rxIdx] &= 0xFF;
   }
@@ -131,18 +154,36 @@ class Chip8 {
   }
 
   void mvi(int opcode) => registers.index = opcode & 0x0FFF;
-  void jmi(int opcode) => registers.pc = registers.v[0x0] + opcode & 0x0FFF;
+  void jmi(int opcode) => registers.pc = registers.v[0x0] + (opcode & 0x0FFF);
   void rand(int opcode) => registers.v[_rxIndex(opcode)] = Random().nextInt(opcode & 0xFF + 1);
-  void sprite(int _) {}
-  void xsprite(int _) {}
 
-  void gdelay(int _) {}
-  void key(int _) {}
+  void sprite(int opcode) {
+    var xLocation = registers.v[_rxIndex(opcode)];
+    var yLocation = registers.v[_ryIndex(opcode)];
+    var height = opcode & 0x000F;
+
+    registers.v[0xF] = 0;
+
+    for (int y = 0; y < height; y++) {
+      var pixel = memory[registers.index + y];
+      for (int x = 0; x < 8; x++) {
+        if ((pixel & (0x80 >> x)) != 0) {
+          var xPos = (xLocation + x) % 64;
+          var yPos = (yLocation + y) % 32;
+
+          if (display[yPos][xPos] == 1) registers.v[0xF] = 0x1;
+          display[yPos][xPos] ^= 1;
+        }
+      }
+    }
+  }
+
+  void gdelay(int opcode) => registers.v[_rxIndex(opcode)] = delayTimer;
+
   void sdelay(int opcode) => delayTimer = registers.v[_rxIndex(opcode)];
   void ssound(int opcode) => soundTimer = registers.v[_rxIndex(opcode)];
   void adi(int opcode) => registers.index += registers.v[_rxIndex(opcode)];
-  void font(int _) {}
-  void xfont(int _) {}
+  void font(int opcode) => registers.index = registers.v[_rxIndex(opcode)] * 5;
 
   void bcd(int opcode) {
     memory[registers.index] = registers.v[_rxIndex(opcode)] ~/ 100;
@@ -177,23 +218,201 @@ class RunnableChip8 {
   Chip8Registers get registers => chip8.registers;
 
   factory RunnableChip8.fromFile(String filePath) {
+    var input = CliInput();
     var file = File(filePath);
     var rom = file.readAsBytesSync();
-    return RunnableChip8(Chip8(rom: rom));
-  }
 
-  int get _currentOpCode => memory[registers.pc] << 8 | memory[registers.pc + 1];
+    return RunnableChip8(Chip8(rom: rom, input: input));
+  }
 
   void tick() {
-    var opCode = _currentOpCode;
-
+    var opcode = memory[registers.pc] << 8 | memory[registers.pc + 1];
     registers.pc += 2;
-    var firstNb = opCode & 0xF000;
+
+    var firstNibble = (opcode & 0xF000) >> 12;
+    switch (firstNibble) {
+      case 0x0:
+        switch (opcode & 0x00FF) {
+          case 0xE0:
+            chip8.cls();
+            break;
+          case 0xEE:
+            chip8.rts();
+            break;
+        }
+        break;
+      case 0x1:
+        chip8.jmp(opcode);
+        break;
+      case 0x2:
+        chip8.jsr(opcode);
+        break;
+      case 0x3:
+        chip8.skeqConst(opcode);
+        break;
+      case 0x4:
+        chip8.skneConst(opcode);
+        break;
+      case 0x5:
+        chip8.skeq(opcode);
+        break;
+      case 0x6:
+        chip8.movConst(opcode);
+        break;
+      case 0x7:
+        chip8.addConst(opcode);
+        break;
+      case 0x8:
+        switch (opcode & 0x000F) {
+          case 0x0:
+            chip8.mov(opcode);
+            break;
+          case 0x1:
+            chip8.or(opcode);
+            break;
+          case 0x2:
+            chip8.and(opcode);
+            break;
+          case 0x3:
+            chip8.xor(opcode);
+            break;
+          case 0x4:
+            chip8.add(opcode);
+            break;
+          case 0x5:
+            chip8.sub(opcode);
+            break;
+        }
+        break;
+      case 0x9:
+        chip8.skne(opcode);
+        break;
+      case 0xA:
+        chip8.mvi(opcode);
+        break;
+      case 0xB:
+        chip8.jmi(opcode);
+        break;
+      case 0xC:
+        chip8.rand(opcode);
+        break;
+      case 0xD:
+        chip8.sprite(opcode);
+        break;
+      case 0xE:
+        switch (opcode & 0x0FF) {
+          case 0x9E:
+            chip8.skpr(opcode);
+            break;
+          case 0xA1:
+            chip8.skup(opcode);
+            break;
+        }
+        break;
+
+      case 0xF:
+        switch (opcode & 0x0FF) {
+          case 0x07:
+            chip8.gdelay(opcode);
+            break;
+          case 0x0A:
+            chip8.key(opcode);
+            break;
+          case 0x15:
+            chip8.sdelay(opcode);
+            break;
+          case 0x18:
+            chip8.ssound(opcode);
+            break;
+          case 0x1E:
+            chip8.adi(opcode);
+            break;
+          case 0x29:
+            chip8.font(opcode);
+            break;
+          case 0x33:
+            chip8.bcd(opcode);
+            break;
+          case 0x55:
+            chip8.str(opcode);
+            break;
+          case 0x65:
+            chip8.ldr(opcode);
+            break;
+        }
+        break;
+    }
   }
 
-  void run() {
+  void timerCallback(Timer _) {
+    if (chip8.soundTimer > 0) chip8.soundTimer--;
+    if (chip8.delayTimer > 0) chip8.delayTimer--;
+
+    // Clear the screen
+    print("\x1B[2J\x1B[0;0H");
+
+    print(chip8.display.map((e) => e.map((e) => e == 1 ? '*' : ' ').join('')).join('\n'));
+  }
+
+  Future<void> dumpMemory() async {
+    var file = File('./MemoryDump.txt');
+    var dump = memory.map((e) => '0x' + e.toRadixString(16).toUpperCase().padLeft(2, '0')).join('\n');
+    await file.writeAsString(dump);
+  }
+
+  void dumpAll() {
+    var memoryDump = memory.map((e) => '0x' + e.toRadixString(16).toUpperCase().padLeft(2, '0')).join('\n');
+
+    print("Opcode = 0x${(memory[registers.pc] << 8 | memory[registers.pc + 1]).toRadixString(16).toUpperCase()}");
+    print("---Register---");
+    print("V0: 0x${registers.v[0x0].toRadixString(16).toUpperCase()}");
+    print("V1: 0x${registers.v[0x1].toRadixString(16).toUpperCase()}");
+    print("V2: 0x${registers.v[0x2].toRadixString(16).toUpperCase()}");
+    print("V3: 0x${registers.v[0x3].toRadixString(16).toUpperCase()}");
+    print("V4: 0x${registers.v[0x4].toRadixString(16).toUpperCase()}");
+    print("V5: 0x${registers.v[0x5].toRadixString(16).toUpperCase()}");
+    print("V6: 0x${registers.v[0x6].toRadixString(16).toUpperCase()}");
+    print("V7: 0x${registers.v[0x7].toRadixString(16).toUpperCase()}");
+    print("V8: 0x${registers.v[0x8].toRadixString(16).toUpperCase()}");
+    print("V9: 0x${registers.v[0x9].toRadixString(16).toUpperCase()}");
+    print("VA: 0x${registers.v[0xA].toRadixString(16).toUpperCase()}");
+    print("VB: 0x${registers.v[0xB].toRadixString(16).toUpperCase()}");
+    print("VC: 0x${registers.v[0xC].toRadixString(16).toUpperCase()}");
+    print("VD: 0x${registers.v[0xD].toRadixString(16).toUpperCase()}");
+    print("VE: 0x${registers.v[0xE].toRadixString(16).toUpperCase()}");
+    print("VF: 0x${registers.v[0xF].toRadixString(16).toUpperCase()}");
+    print("Index Reg: 0x${registers.index.toRadixString(16).toUpperCase()}");
+    print("PC Reg: 0x${registers.pc.toRadixString(16).toUpperCase()}");
+    //print("SP Reg: 0x${registers.sp.toRadixString(16).toUpperCase()}");
+    print("---Memory---");
+    print(memoryDump);
+  }
+
+  Future<void> run({int? maxCycle}) async {
+    var previousTick = DateTime.now();
+    var timer60hz = Timer.periodic(const Duration(milliseconds: 1000 ~/ 30), timerCallback);
+    var currentCycle = 0;
+
     while (true) {
+      if (maxCycle == currentCycle++) {
+        dumpAll();
+        break;
+      }
+
       tick();
+      var now = DateTime.now();
+
+      var diff = now.subtract(Duration(milliseconds: previousTick.millisecondsSinceEpoch)).millisecondsSinceEpoch;
+
+      if (diff <= 1000 / 600) {
+        await Future.delayed(Duration(milliseconds: (1000 - diff) ~/ 600));
+      }
+
+      if (chip8.soundTimer > 0) chip8.soundTimer--;
+      if (chip8.delayTimer > 0) chip8.delayTimer--;
+      previousTick = now;
     }
+    (chip8.input as CliInput).cancel();
+    timer60hz.cancel();
   }
 }

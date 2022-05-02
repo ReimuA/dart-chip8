@@ -1,9 +1,9 @@
 import 'dart:core';
 
 extension IndexedIterable<E> on Iterable<E> {
-  Iterable<T> mapIndexed<T>(T Function(E e, int i) f) {
+  Iterable<T> mapIndexed<T>(T Function(int i, E e) f) {
     var i = 0;
-    return map((e) => f(e, i++));
+    return map((e) => f(i++, e));
   }
 }
 
