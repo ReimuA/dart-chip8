@@ -1,26 +1,24 @@
 import 'dart:async';
 import 'dart:io' as io;
 
-import 'input.dart';
-
-class CliInput implements IChip8Input {
+class CliInput {
   late StreamSubscription _subscription;
-  final List<bool> _keysPressedStatus = List.filled(16, false);
+  final void Function(int key) onKeyPressed;
+  final void Function(int key) onKeyReleased;
 
   void _onInput(List<int> keys) {
     for (var key in keys) {
-      if (key >= 97 && key <= 112) _keysPressedStatus[key - 97] = true;
+      if (key >= 97 && key <= 112) {
+        onKeyPressed(key - 97);
+        Future.delayed(Duration(milliseconds: 100), () => onKeyReleased(key - 97));
+      }
     }
   }
 
-  @override
-  void resetInput() {
-    for (int i = 0; i < _keysPressedStatus.length; i++) {
-      _keysPressedStatus[i] = false;
-    }
-  }
-
-  CliInput() {
+  CliInput({
+    required this.onKeyPressed,
+    required this.onKeyReleased,
+  }) {
     io.stdin.lineMode = false;
     io.stdin.echoMode = false;
     _subscription = io.stdin.listen(_onInput);
@@ -32,7 +30,6 @@ class CliInput implements IChip8Input {
     _subscription.cancel();
   }
 
-  @override
   Future<int> getNextKeyPressed() async {
     var key = io.stdin.readByteSync();
 
@@ -42,7 +39,4 @@ class CliInput implements IChip8Input {
 
     return key;
   }
-
-  @override
-  List<bool> get keysPressedStatus => List.from(_keysPressedStatus);
 }

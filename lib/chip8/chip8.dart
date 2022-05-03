@@ -1,17 +1,16 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:monke8/chip8/input.dart';
-import 'package:monke8/chip8/register.dart';
+import 'package:chip8/chip8/isolate_event.dart';
+import 'package:chip8/chip8/register.dart';
 
-import 'cli_input.dart';
 import 'font.dart';
 
 class Chip8 {
   Uint8List memory;
-  IChip8Input? input;
   int soundTimer = 0;
   int delayTimer = 0;
   Chip8Registers registers;
@@ -19,7 +18,6 @@ class Chip8 {
   List<List<int>> display = List.generate(32, (_) => List.filled(64, 0));
 
   Chip8({
-    this.input,
     int index = 0,
     Uint8List? rom,
     int v0 = 0,
@@ -88,21 +86,17 @@ class Chip8 {
 
   void skpr(int opcode) {
     var index = registers.v[_rxIndex(opcode)];
-    var shouldSkip = input?.keysPressedStatus[index] ?? false;
-    if (shouldSkip) input?.resetInput();
-    _skip(shouldSkip);
+    _skip(keysPressedStatus[index]);
   }
 
   void skup(int opcode) {
     var index = registers.v[_rxIndex(opcode)];
-
-    var shouldSkip = !(input?.keysPressedStatus[index] ?? true);
-    if (!shouldSkip) input?.resetInput();
-    _skip(shouldSkip);
+    _skip(keysPressedStatus[index]);
   }
 
+  // TODO: adapt to event based input
   void key(int opcode) async =>
-      registers.v[_rxIndex(opcode)] = await input?.getNextKeyPressed() ?? registers.v[_rxIndex(opcode)];
+      registers.v[_rxIndex(opcode)] = 0; //await input?.getNextKeyPressed() ?? registers.v[_rxIndex(opcode)];
 
   void addConst(int opcode) {
     var idx = (opcode & 0x0F00) >> 8;
@@ -218,11 +212,10 @@ class RunnableChip8 {
   Chip8Registers get registers => chip8.registers;
 
   factory RunnableChip8.fromFile(String filePath) {
-    var input = CliInput();
     var file = File(filePath);
     var rom = file.readAsBytesSync();
 
-    return RunnableChip8(Chip8(rom: rom, input: input));
+    return RunnableChip8(Chip8(rom: rom));
   }
 
   void tick() {
@@ -388,12 +381,21 @@ class RunnableChip8 {
     print(memoryDump);
   }
 
-  Future<void> run({int? maxCycle}) async {
+  Future<void> run({int? maxCycle, required ReceivePort receivePort}) async {
     var previousTick = DateTime.now();
     var timer60hz = Timer.periodic(const Duration(milliseconds: 1000 ~/ 30), timerCallback);
     var currentCycle = 0;
+    var stopIsolateReceived = false;
 
-    while (true) {
+    var subscription = receivePort.listen((event) {
+      if (stopIsolateReceived) return;
+      if (event is String) print(event);
+      if (event is KeyPressedEvent) chip8.keysPressedStatus[event.key] = true;
+      if (event is KeyReleasedEvent) chip8.keysPressedStatus[event.key] = false;
+      if (event is StopIsolateEvent) stopIsolateReceived = true;
+    });
+
+    while (!stopIsolateReceived) {
       if (maxCycle == currentCycle++) {
         dumpAll();
         break;
@@ -412,7 +414,34 @@ class RunnableChip8 {
       if (chip8.delayTimer > 0) chip8.delayTimer--;
       previousTick = now;
     }
-    (chip8.input as CliInput).cancel();
+
     timer60hz.cancel();
+    subscription.cancel();
+  }
+
+  static void Function(SendPort) _isolateEntrypoint(String romPath) => (SendPort p) {
+        final commandPort = ReceivePort();
+        p.send(commandPort.sendPort);
+        var chip = RunnableChip8.fromFile(romPath);
+
+        chip.run(receivePort: commandPort).then((e) {
+          commandPort.close();
+          Isolate.exit();
+        });
+      };
+
+  static Future<SendPort> startInIsolate(String romPath) async {
+    final p = ReceivePort();
+    final completer = Completer<SendPort>();
+
+    var isolate = await Isolate.spawn<SendPort>(_isolateEntrypoint(romPath), p.sendPort);
+    isolate.addOnExitListener(p.sendPort, response: "terminated");
+
+    p.listen((message) {
+      if (message is SendPort) completer.complete(message);
+      if (message is String && message == "terminated") p.close();
+    });
+
+    return completer.future;
   }
 }

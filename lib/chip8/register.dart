@@ -1,4 +1,3 @@
-import 'package:monke8/extension/iterable.dart';
 import 'package:collection/collection.dart';
 
 class Chip8Registers {

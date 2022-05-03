@@ -4,6 +4,7 @@
 
 # Conventional directory for build output.
 build/
+doc/api/
 
 # custom
 coverage/

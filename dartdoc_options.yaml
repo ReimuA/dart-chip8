@@ -1,0 +1,7 @@
+dartdoc:
+  nodoc:
+    [
+      "lib/chip8/cli_input.dart",
+      "lib/chip8/font.dart",
+      "lib/extension/iterable.dart",
+    ]
