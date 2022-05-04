@@ -1,11 +1,9 @@
 name: chip8
-version: 0.0.1
-description: Implementation of a chip8 emulator
+version: 0.0.2
+description: Implementation of a chip8 emulator for education purpose. see  https://en.wikipedia.org/wiki/CHIP-8 for references.
 homepage: https://github.com/ReimuA/Monke8
 repository: https://github.com/ReimuA/Monke8
 issue_tracker: https://github.com/ReimuA/Monke8/issues
-
-publish_to: https://pub.dev/
 
 environment:
   sdk: ">=2.16.2 <3.0.0"
@@ -14,6 +12,7 @@ environment:
 #   path: ^1.8.0
 
 dev_dependencies:
+  dart_code_metrics: ^4.15.0
   lints: ^1.0.0
   test: ^1.16.0
 dependencies:

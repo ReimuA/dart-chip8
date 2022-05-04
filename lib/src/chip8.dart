@@ -4,10 +4,13 @@ import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:chip8/chip8/isolate_event.dart';
-import 'package:chip8/chip8/register.dart';
+import 'package:chip8/src/event.dart';
+import 'package:chip8/src/register.dart';
+import 'package:chip8/src/chip8_isolate_port_and_streams.dart';
 
 import 'font.dart';
+
+typedef Chip8Display = List<List<int>>;
 
 class Chip8 {
   Uint8List memory;
@@ -15,7 +18,7 @@ class Chip8 {
   int delayTimer = 0;
   Chip8Registers registers;
   List<bool> keysPressedStatus = List.filled(16, false);
-  List<List<int>> display = List.generate(32, (_) => List.filled(64, 0));
+  Chip8Display display = List.generate(32, (_) => List.filled(64, 0));
 
   Chip8({
     int index = 0,
@@ -203,102 +206,105 @@ class Chip8 {
 }
 
 class RunnableChip8 {
-  final Chip8 chip8;
+  final Chip8 _chip8;
 
-  RunnableChip8(this.chip8);
+  final SendPort _sendPort;
+  final ReceivePort _receivePort;
 
-  Uint8List get memory => chip8.memory;
+  RunnableChip8(this._chip8, this._sendPort, this._receivePort);
 
-  Chip8Registers get registers => chip8.registers;
+  Uint8List get _memory => _chip8.memory;
+  Chip8Registers get _registers => _chip8.registers;
 
-  factory RunnableChip8.fromFile(String filePath) {
+  factory RunnableChip8.fromFile(String filePath, SendPort sendPort, ReceivePort receivePort) {
     var file = File(filePath);
     var rom = file.readAsBytesSync();
 
-    return RunnableChip8(Chip8(rom: rom));
+    return RunnableChip8(Chip8(rom: rom), sendPort, receivePort);
   }
 
   void tick() {
-    var opcode = memory[registers.pc] << 8 | memory[registers.pc + 1];
-    registers.pc += 2;
+    var opcode = _memory[_registers.pc] << 8 | _memory[_registers.pc + 1];
+    _registers.pc += 2;
 
     var firstNibble = (opcode & 0xF000) >> 12;
+
     switch (firstNibble) {
       case 0x0:
         switch (opcode & 0x00FF) {
           case 0xE0:
-            chip8.cls();
+            _chip8.cls();
             break;
           case 0xEE:
-            chip8.rts();
+            _chip8.rts();
             break;
         }
         break;
       case 0x1:
-        chip8.jmp(opcode);
+        _chip8.jmp(opcode);
         break;
       case 0x2:
-        chip8.jsr(opcode);
+        _chip8.jsr(opcode);
         break;
       case 0x3:
-        chip8.skeqConst(opcode);
+        _chip8.skeqConst(opcode);
         break;
       case 0x4:
-        chip8.skneConst(opcode);
+        _chip8.skneConst(opcode);
         break;
       case 0x5:
-        chip8.skeq(opcode);
+        _chip8.skeq(opcode);
         break;
       case 0x6:
-        chip8.movConst(opcode);
+        _chip8.movConst(opcode);
         break;
       case 0x7:
-        chip8.addConst(opcode);
+        _chip8.addConst(opcode);
         break;
       case 0x8:
         switch (opcode & 0x000F) {
           case 0x0:
-            chip8.mov(opcode);
+            _chip8.mov(opcode);
             break;
           case 0x1:
-            chip8.or(opcode);
+            _chip8.or(opcode);
             break;
           case 0x2:
-            chip8.and(opcode);
+            _chip8.and(opcode);
             break;
           case 0x3:
-            chip8.xor(opcode);
+            _chip8.xor(opcode);
             break;
           case 0x4:
-            chip8.add(opcode);
+            _chip8.add(opcode);
             break;
           case 0x5:
-            chip8.sub(opcode);
+            _chip8.sub(opcode);
             break;
         }
         break;
       case 0x9:
-        chip8.skne(opcode);
+        _chip8.skne(opcode);
         break;
       case 0xA:
-        chip8.mvi(opcode);
+        _chip8.mvi(opcode);
         break;
       case 0xB:
-        chip8.jmi(opcode);
+        _chip8.jmi(opcode);
         break;
       case 0xC:
-        chip8.rand(opcode);
+        _chip8.rand(opcode);
         break;
       case 0xD:
-        chip8.sprite(opcode);
+        _chip8.sprite(opcode);
         break;
       case 0xE:
         switch (opcode & 0x0FF) {
           case 0x9E:
-            chip8.skpr(opcode);
+            _chip8.skpr(opcode);
             break;
           case 0xA1:
-            chip8.skup(opcode);
+            _chip8.skup(opcode);
             break;
         }
         break;
@@ -306,101 +312,62 @@ class RunnableChip8 {
       case 0xF:
         switch (opcode & 0x0FF) {
           case 0x07:
-            chip8.gdelay(opcode);
+            _chip8.gdelay(opcode);
             break;
           case 0x0A:
-            chip8.key(opcode);
+            _chip8.key(opcode);
             break;
           case 0x15:
-            chip8.sdelay(opcode);
+            _chip8.sdelay(opcode);
             break;
           case 0x18:
-            chip8.ssound(opcode);
+            _chip8.ssound(opcode);
+            _sendPort.send(Chip8PlaySoundEvent());
             break;
           case 0x1E:
-            chip8.adi(opcode);
+            _chip8.adi(opcode);
             break;
           case 0x29:
-            chip8.font(opcode);
+            _chip8.font(opcode);
             break;
           case 0x33:
-            chip8.bcd(opcode);
+            _chip8.bcd(opcode);
             break;
           case 0x55:
-            chip8.str(opcode);
+            _chip8.str(opcode);
             break;
           case 0x65:
-            chip8.ldr(opcode);
+            _chip8.ldr(opcode);
             break;
         }
         break;
     }
   }
 
-  void timerCallback(Timer _) {
-    if (chip8.soundTimer > 0) chip8.soundTimer--;
-    if (chip8.delayTimer > 0) chip8.delayTimer--;
+  void timer60hzCallback(Timer _) {
+    if (_chip8.soundTimer > 0) {
+      _chip8.soundTimer--;
+      if (_chip8.soundTimer == 0) _sendPort.send(Chip8StopSoundEvent());
+    }
 
-    // Clear the screen
-    print("\x1B[2J\x1B[0;0H");
+    if (_chip8.delayTimer > 0) _chip8.delayTimer--;
 
-    print(chip8.display.map((e) => e.map((e) => e == 1 ? '*' : ' ').join('')).join('\n'));
+    _sendPort.send(_chip8.display);
   }
 
-  Future<void> dumpMemory() async {
-    var file = File('./MemoryDump.txt');
-    var dump = memory.map((e) => '0x' + e.toRadixString(16).toUpperCase().padLeft(2, '0')).join('\n');
-    await file.writeAsString(dump);
-  }
-
-  void dumpAll() {
-    var memoryDump = memory.map((e) => '0x' + e.toRadixString(16).toUpperCase().padLeft(2, '0')).join('\n');
-
-    print("Opcode = 0x${(memory[registers.pc] << 8 | memory[registers.pc + 1]).toRadixString(16).toUpperCase()}");
-    print("---Register---");
-    print("V0: 0x${registers.v[0x0].toRadixString(16).toUpperCase()}");
-    print("V1: 0x${registers.v[0x1].toRadixString(16).toUpperCase()}");
-    print("V2: 0x${registers.v[0x2].toRadixString(16).toUpperCase()}");
-    print("V3: 0x${registers.v[0x3].toRadixString(16).toUpperCase()}");
-    print("V4: 0x${registers.v[0x4].toRadixString(16).toUpperCase()}");
-    print("V5: 0x${registers.v[0x5].toRadixString(16).toUpperCase()}");
-    print("V6: 0x${registers.v[0x6].toRadixString(16).toUpperCase()}");
-    print("V7: 0x${registers.v[0x7].toRadixString(16).toUpperCase()}");
-    print("V8: 0x${registers.v[0x8].toRadixString(16).toUpperCase()}");
-    print("V9: 0x${registers.v[0x9].toRadixString(16).toUpperCase()}");
-    print("VA: 0x${registers.v[0xA].toRadixString(16).toUpperCase()}");
-    print("VB: 0x${registers.v[0xB].toRadixString(16).toUpperCase()}");
-    print("VC: 0x${registers.v[0xC].toRadixString(16).toUpperCase()}");
-    print("VD: 0x${registers.v[0xD].toRadixString(16).toUpperCase()}");
-    print("VE: 0x${registers.v[0xE].toRadixString(16).toUpperCase()}");
-    print("VF: 0x${registers.v[0xF].toRadixString(16).toUpperCase()}");
-    print("Index Reg: 0x${registers.index.toRadixString(16).toUpperCase()}");
-    print("PC Reg: 0x${registers.pc.toRadixString(16).toUpperCase()}");
-    //print("SP Reg: 0x${registers.sp.toRadixString(16).toUpperCase()}");
-    print("---Memory---");
-    print(memoryDump);
-  }
-
-  Future<void> run({int? maxCycle, required ReceivePort receivePort}) async {
+  Future<void> run() async {
     var previousTick = DateTime.now();
-    var timer60hz = Timer.periodic(const Duration(milliseconds: 1000 ~/ 30), timerCallback);
-    var currentCycle = 0;
+    var timer60hz = Timer.periodic(const Duration(milliseconds: 1000 ~/ 30), timer60hzCallback);
     var stopIsolateReceived = false;
 
-    var subscription = receivePort.listen((event) {
+    var subscription = _receivePort.listen((event) {
       if (stopIsolateReceived) return;
-      if (event is String) print(event);
-      if (event is KeyPressedEvent) chip8.keysPressedStatus[event.key] = true;
-      if (event is KeyReleasedEvent) chip8.keysPressedStatus[event.key] = false;
+      if (event is KeyPressedEvent) _chip8.keysPressedStatus[event.key] = true;
+      if (event is KeyReleasedEvent) _chip8.keysPressedStatus[event.key] = false;
       if (event is StopIsolateEvent) stopIsolateReceived = true;
     });
 
     while (!stopIsolateReceived) {
-      if (maxCycle == currentCycle++) {
-        dumpAll();
-        break;
-      }
-
       tick();
       var now = DateTime.now();
 
@@ -410,36 +377,45 @@ class RunnableChip8 {
         await Future.delayed(Duration(milliseconds: (1000 - diff) ~/ 600));
       }
 
-      if (chip8.soundTimer > 0) chip8.soundTimer--;
-      if (chip8.delayTimer > 0) chip8.delayTimer--;
       previousTick = now;
     }
 
     timer60hz.cancel();
     subscription.cancel();
+    _receivePort.close();
+
+    _sendPort.send("terminate");
   }
 
-  static void Function(SendPort) _isolateEntrypoint(String romPath) => (SendPort p) {
-        final commandPort = ReceivePort();
-        p.send(commandPort.sendPort);
-        var chip = RunnableChip8.fromFile(romPath);
+  static void Function(SendPort) _isolateEntrypoint(String romPath) => (SendPort sendPort) {
+        var receivePort = ReceivePort();
 
-        chip.run(receivePort: commandPort).then((e) {
-          commandPort.close();
+        sendPort.send(receivePort.sendPort);
+
+        var chip = RunnableChip8.fromFile(romPath, sendPort, receivePort);
+
+        chip.run().then((e) {
+          receivePort.close();
           Isolate.exit();
         });
       };
 
-  static Future<SendPort> startInIsolate(String romPath) async {
-    final p = ReceivePort();
-    final completer = Completer<SendPort>();
+  static Future<Chip8IsolatePortAndStreams> startInIsolate(String romPath) async {
+    final mainThreadReceivePort = ReceivePort();
+    final completer = Completer<Chip8IsolatePortAndStreams>();
 
-    var isolate = await Isolate.spawn<SendPort>(_isolateEntrypoint(romPath), p.sendPort);
-    isolate.addOnExitListener(p.sendPort, response: "terminated");
+    await Isolate.spawn<SendPort>(_isolateEntrypoint(romPath), mainThreadReceivePort.sendPort);
+    var bStream = mainThreadReceivePort.asBroadcastStream();
 
-    p.listen((message) {
-      if (message is SendPort) completer.complete(message);
-      if (message is String && message == "terminated") p.close();
+    bStream.listen((event) {
+      if (event is SendPort) {
+        completer.complete(Chip8IsolatePortAndStreams(
+          event,
+          bStream.where((event) => event is Chip8Display).cast<Chip8Display>(),
+          bStream.where((event) => event is Chip8SoundEvent).cast<Chip8SoundEvent>(),
+        ));
+      }
+      if (event is String && event == "terminate") mainThreadReceivePort.close();
     });
 
     return completer.future;

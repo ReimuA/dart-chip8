@@ -1,5 +1,5 @@
-import 'package:chip8/chip8/chip8.dart';
-import 'package:chip8/chip8/font.dart';
+import 'package:chip8/src/chip8.dart';
+import 'package:chip8/src/font.dart';
 import 'package:test/test.dart';
 
 void main() {
