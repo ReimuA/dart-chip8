@@ -1,3 +1,6 @@
+## [0.0.3] - 04/07/2022
+- Removed dependencies
+
 ## [0.0.2] - 04/05/2022
 - Added example
 = Added indirect audio support

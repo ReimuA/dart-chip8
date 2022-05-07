@@ -357,7 +357,7 @@ class RunnableChip8 {
 
   Future<void> run() async {
     var previousTick = DateTime.now();
-    var timer60hz = Timer.periodic(const Duration(milliseconds: 1000 ~/ 30), timer60hzCallback);
+    var timer60hz = Timer.periodic(const Duration(milliseconds: 1000 ~/ 60), timer60hzCallback);
     var stopIsolateReceived = false;
 
     var subscription = _receivePort.listen((event) {
