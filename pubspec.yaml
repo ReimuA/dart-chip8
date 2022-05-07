@@ -1,5 +1,5 @@
 name: chip8
-version: 0.0.2
+version: 0.0.3
 description: Implementation of a chip8 emulator for education purpose. see  https://en.wikipedia.org/wiki/CHIP-8 for references.
 homepage: https://github.com/ReimuA/Monke8
 repository: https://github.com/ReimuA/Monke8
