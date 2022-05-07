@@ -216,13 +216,6 @@ class RunnableChip8 {
   Uint8List get _memory => _chip8.memory;
   Chip8Registers get _registers => _chip8.registers;
 
-  factory RunnableChip8.fromFile(String filePath, SendPort sendPort, ReceivePort receivePort) {
-    var file = File(filePath);
-    var rom = file.readAsBytesSync();
-
-    return RunnableChip8(Chip8(rom: rom), sendPort, receivePort);
-  }
-
   void tick() {
     var opcode = _memory[_registers.pc] << 8 | _memory[_registers.pc + 1];
     _registers.pc += 2;
@@ -387,12 +380,12 @@ class RunnableChip8 {
     _sendPort.send("terminate");
   }
 
-  static void Function(SendPort) _isolateEntrypoint(String romPath) => (SendPort sendPort) {
+  static void Function(SendPort) _isolateEntrypointFromRom(Uint8List rom) => (SendPort sendPort) {
         var receivePort = ReceivePort();
 
         sendPort.send(receivePort.sendPort);
 
-        var chip = RunnableChip8.fromFile(romPath, sendPort, receivePort);
+        var chip = RunnableChip8(Chip8(rom: rom), sendPort, receivePort);
 
         chip.run().then((e) {
           receivePort.close();
@@ -400,11 +393,11 @@ class RunnableChip8 {
         });
       };
 
-  static Future<Chip8IsolatePortAndStreams> startInIsolate(String romPath) async {
+  static Future<Chip8IsolatePortAndStreams> startInIsolateFromRom(Uint8List rom) async {
     final mainThreadReceivePort = ReceivePort();
     final completer = Completer<Chip8IsolatePortAndStreams>();
 
-    await Isolate.spawn<SendPort>(_isolateEntrypoint(romPath), mainThreadReceivePort.sendPort);
+    await Isolate.spawn<SendPort>(_isolateEntrypointFromRom(rom), mainThreadReceivePort.sendPort);
     var bStream = mainThreadReceivePort.asBroadcastStream();
 
     bStream.listen((event) {
@@ -419,5 +412,12 @@ class RunnableChip8 {
     });
 
     return completer.future;
+  }
+
+  static Future<Chip8IsolatePortAndStreams> startInIsolate(String romPath) async {
+    var file = File(romPath);
+    var rom = file.readAsBytesSync();
+
+    return startInIsolateFromRom(rom);
   }
 }

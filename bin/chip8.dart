@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' as io;
+import 'dart:io';
 
 import 'package:chip8/src/chip8.dart';
 import 'package:chip8/src/event.dart';
@@ -49,7 +50,9 @@ void main(List<String> arguments) async {
 
   if (romPath == null) return;
 
-  var ports = await RunnableChip8.startInIsolate(romPath);
+  var file = File(romPath);
+  var rom = file.readAsBytesSync();
+  var ports = await RunnableChip8.startInIsolateFromRom(rom);
 
   ports.displayStream.listen((message) {
     print("\x1B[2J\x1B[0;0H");

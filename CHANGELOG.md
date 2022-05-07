@@ -1,3 +1,8 @@
+## [0.0.4] - 04/07/2022
+- Updated repository url
+= Starting isolate from rom is possible
+
+
 ## [0.0.3] - 04/07/2022
 - Removed dependencies
 
